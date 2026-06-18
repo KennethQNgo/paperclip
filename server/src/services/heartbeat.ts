@@ -6874,6 +6874,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             // owns the issue execution lock shown as the active run.
             eq(issues.assigneeAgentId, claimed.agentId),
             or(isNull(issues.executionRunId), eq(issues.executionRunId, claimed.id)),
+            notInArray(issues.status, ["done", "cancelled"]),
           ),
         );
     }
@@ -9794,9 +9795,16 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         }
         // Only human/comment-reopen interactions should revive completed issues;
         // system follow-ups such as retry or cleanup wakes must not reopen closed work.
+        // System-managed issues are closed by agents as part of their intended workflow;
+        // local-CLI agents that post under user-auth without X-Paperclip-Run-Id would
+        // otherwise fail the self-authored check and trigger an unintended reopen loop.
+        const isSystemManagedIssue = Object.values(RECOVERY_ORIGIN_KINDS).includes(
+          issue.originKind as typeof RECOVERY_ORIGIN_KINDS[keyof typeof RECOVERY_ORIGIN_KINDS],
+        );
         const shouldReopenDeferredCommentWake =
           deferredCommentIds.length > 0 &&
           !deferredCommentWakeIsSelfAuthored &&
+          !isSystemManagedIssue &&
           (issue.status === "done" || issue.status === "cancelled") &&
           (
             deferred.requestedByActorType === "user" ||
